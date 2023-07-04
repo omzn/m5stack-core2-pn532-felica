@@ -18,6 +18,7 @@ Character::Character(LGFX *display, unsigned char (*bmp)[4][2048]) {
   move_queue_last = 0;
   image = bmp;
   size = 2;
+  sprite->createSprite(width * (size + 1), height * (size + 1));
 }
 
 void Character::start(uint8_t o) {
@@ -352,7 +353,7 @@ uint32_t Character::drawSprite(unsigned char *data, uint8_t s) {
     return 0;
   }
 
-  sprite->createSprite(width * 3, height * 3);
+//  sprite->createSprite(width * 3, height * 3);
   fx = (pos_x / width) * width; // absolute position of sprite
   fy = (pos_y / height) * height;
   sx = pos_x % width; // relative position of drawing in the sprite
@@ -397,7 +398,7 @@ uint32_t Character::drawSprite(unsigned char *data, uint8_t s) {
   }
   //  sprite->pushSprite(pos_x,pos_y,TFT_TRANSPARENT);
   sprite->pushSprite(fx, fy);
-  sprite->deleteSprite();
+//  sprite->deleteSprite();
   uint32_t etime = millis() - startTime;
   return etime;
 }

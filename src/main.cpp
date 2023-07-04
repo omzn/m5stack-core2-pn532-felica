@@ -71,7 +71,7 @@ PN532_I2C pn532i2c(Wire);
 PN532 nfc(pn532i2c);
 
 uint8_t _prevIDm[8];
-unsigned long _prevTime = 0;
+uint32_t nfcscan_timer = 0;
 
 uint16_t systemCode = 0xFE00;
 uint8_t requestCode = 0x01;  // System Code request
@@ -80,23 +80,41 @@ uint8_t pmm[8];
 uint16_t systemCodeResponse;
 volatile boolean irq = false;
 
+int message_timer = 0;
+uint32_t wifi_connect_timer = 0;
+
 /* LCD variables */
 
 // static LGFX *lcd = &(M5.Lcd);
 static LGFX *lcd = new LGFX();
+LGFX_Sprite *sp320x64;
 
 Character aquatan = Character(lcd, (unsigned char (*)[4][2048])aqua_bmp);
 Map bg = Map(lcd, 10, 8, (unsigned char (*)[2048])bgimg);
 
 uint8_t bgmap[8][10] = {
-    {14, 15, 15, 15, 15, 15, 15, 15, 15, 15},
-    {2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
-    {5, 6, 6, 7, 1, 1, 5, 6, 6, 7},
-    {4, 4, 4, 4, 0, 0, 4, 4, 4, 4},
+    { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
+    { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
+    { 5, 6, 6, 7, 1, 1, 5, 6, 6, 7},
+    { 4, 21, 4, 4, 0, 0, 4, 21,  4, 4},
+    {21, 22,21, 16, 0, 0, 4, 22, 21, 4},
     {12, 12, 9, 10, 13, 13, 11, 8, 12, 12},
-    {3, 3, 3, 10, 13, 13, 11, 3, 3, 3},
-    {3, 3, 3, 10, 13, 13, 11, 3, 3, 3},
-    {3, 3, 3, 8, 12, 12, 9, 3, 3, 3}};
+    {23, 23, 14, 10, 13, 13, 11, 15, 23, 3},
+    {14, 3, 15, 8, 12, 12, 9, 3, 3, 3}};
+
+uint8_t collisionmap[8][10] = {
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+    {1, 1, 1, 1, 0, 0, 1, 1, 1, 1},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+    {0, 1, 0, 0, 0, 0, 0, 1, 1, 1}};
+
+uint32_t move_timer = 0;
+boolean touch = false;
+boolean BtnA, BtnB, BtnC;
 
 /* WiFi & net variables*/
 
@@ -108,18 +126,17 @@ const IPAddress apIP(192, 168, 1, 1);
 const char *apSSID = "NFC_LOCK";
 boolean wifi_ap_mode = false;
 
-String url_apiserver = "http://192.168.3.192:3001";
-int use_postdb = 1;
-boolean use_beaconinfo = false;
 /* Preferences */
 
 Preferences prefs;
-String url_endpoint = "http://192.168.68.17:3000";
 String hostname = "lock302";
 String lock_mac = "c9:bb:1a:73:5d:0f";
 String ssid = "hogehoge";
 String wifipass = "foobar";
 String room_name = "8-302";
+String url_apiserver = "http://192.168.3.192:3001";
+boolean use_beaconinfo = false;
+int use_postdb = 1;
 
 String str_student_id = "0";
 
@@ -130,11 +147,6 @@ NimBLEScan *pBLEScan;
 int lock_state = -1;
 int prev_lock_state = 0;
 String strLockState[8] = {"Locked", "Unlocked", "Locking", "Unlocking", "LockingStop", "UnlockingStop", "NotFullyLocked"};
-
-/* Switchbot api */
-
-String switchbot_token;
-String switchbot_secret;
 
 /* Sounds */
 
@@ -246,22 +258,17 @@ void drawMap(uint8_t x, uint8_t y, uint8_t w, uint8_t h) {
 }
 
 void messageBox(int x, int y, String message, uint16_t fgcolor = TFT_WHITE, uint16_t bgcolor = TFT_NAVY) {
-    LGFX_Sprite *img;
-    img = new LGFX_Sprite(lcd);
-    img->setColorDepth(16);
-    img->createSprite(320, 64);
-    img->fillSprite(TFT_TRANSPARENT);
+    sp320x64->fillSprite(TFT_TRANSPARENT);
 
-    img->fillRoundRect(0, 0, 320, 64, 5, bgcolor);
-    img->drawRoundRect(0, 0, 320, 64, 5, TFT_WHITE);
-    img->drawRoundRect(1, 1, 318, 62, 5, TFT_WHITE);
-    img->setFont(&fonts::Font4);
-    img->setTextColor(fgcolor);
+    sp320x64->fillRoundRect(0, 0, 320, 64, 5, bgcolor);
+    sp320x64->drawRoundRect(0, 0, 320, 64, 5, TFT_WHITE);
+    sp320x64->drawRoundRect(1, 1, 318, 62, 5, TFT_WHITE);
+    sp320x64->setFont(&fonts::Font4);
+    sp320x64->setTextColor(fgcolor);
 
-    img->drawString(message, img->width() / 2 - img->textWidth(message) / 2, img->height() / 2 - img->fontHeight() / 2);
+    sp320x64->drawString(message, sp320x64->width() / 2 - sp320x64->textWidth(message) / 2, sp320x64->height() / 2 - sp320x64->fontHeight() / 2);
 
-    img->pushSprite(x, y, TFT_TRANSPARENT);
-    img->deleteSprite();
+    sp320x64->pushSprite(x, y, TFT_TRANSPARENT);
 }
 
 void handleStatus() {
@@ -436,7 +443,7 @@ boolean connectWifi() {
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         Serial.print(".");
-        if (i > 20) {
+        if (i > 30) {
             state = false;
             break;
         }
@@ -456,31 +463,40 @@ boolean connectWifi() {
 
 void post_alive() {
     char params[128];
+    static int fail_count = 0;
 
-    if (use_postdb) {
-        String apiurl = url_apiserver + "/aqua/alive";
-        String ipaddress = WiFi.localIP().toString();
+    String apiurl = url_apiserver + "/aqua/alive";
+    String ipaddress = WiFi.localIP().toString();
 
-        Serial.println(apiurl);
+    Serial.println(apiurl);
 
-        http.begin(client, apiurl.c_str());
-        http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-        sprintf(params, "ipaddress=%s&label=%s", ipaddress.c_str(),
-                hostname.c_str());
-        int httpCode = http.POST(params);
-        if (httpCode > 0) {
-            Serial.printf("[HTTP] POST alive... code: %d\n", httpCode);
-            Serial.printf("[HTTP] url: %s params: %s\n", apiurl.c_str(), params);
-            //    valid_db_server = true;
-        } else {
-            Serial.printf(
-                "[ERROR] POST alive... no connection or no HTTP server: %s\n",
-                http.errorToString(httpCode).c_str());
-            Serial.printf("[ERROR] url: %s params: %s\n", apiurl.c_str(), params);
-            //    valid_db_server = false;
+    http.begin(client, apiurl.c_str());
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    sprintf(params, "ipaddress=%s&label=%s", ipaddress.c_str(),
+            hostname.c_str());
+    int httpCode = http.POST(params);
+    if (httpCode > 0) {
+        Serial.printf("[HTTP] POST alive... code: %d\n", httpCode);
+        Serial.printf("[HTTP] url: %s params: %s\n", apiurl.c_str(), params);
+        if (fail_count > 0 ) {
+            message_timer = millis();
+            fail_count = 0;
         }
-        http.end();
+    } else {
+        Serial.printf(
+            "[ERROR] POST alive... no connection or no HTTP server: %s\n",
+            http.errorToString(httpCode).c_str());
+        Serial.printf("[ERROR] url: %s params: %s\n", apiurl.c_str(), params);
+        fail_count++;
+        messageBox(0, 0, "No WiFi connection", TFT_WHITE, TFT_MAGENTA);
+        if (fail_count > 2) { // 仏の顔も三度
+            ESP.restart();
+            while(1) {
+                delay(1);
+            }
+        }
     }
+    http.end();
 }
 
 void post_note(String label, String value) {
@@ -564,12 +580,11 @@ String mac2deviceid(String mac) {
 
 void cardreading() {
     Serial.println("INT");
-    //    if ((millis() - _prevTime) > 5000) {
+    //    if ((millis() - nfcscan_timer) > 5000) {
     irq = true;
     //    }
 }
 
-int message_timer = 0;
 
 void setup(void) {
     // put your setup code here, to run once:
@@ -590,6 +605,9 @@ void setup(void) {
     lcd->setBrightness(128);
     bg.setMapData(bgmap);
     bg.drawEntireMap();
+
+    sp320x64 = new LGFX_Sprite(lcd);
+    sp320x64->createSprite(320,64);
 
     aquatan.start(160 - 32, 120 + 64, ORIENT_FRONT);
     aquatan.setMap(&bg);
@@ -686,12 +704,17 @@ void setup(void) {
         bg.drawMap(0, 0, 10, 2);
     } else {
         startWebServer_ap();
+        wifi_connect_timer = millis();
     }
 }
 
-uint32_t move_prev_millis = 0;
-boolean touch = false;
-boolean BtnA, BtnB, BtnC;
+void keepalive(int seconds) {
+    static uint32_t keepalive_timer = 0;
+    if (millis() - keepalive_timer > seconds * 1000) {
+        post_alive();
+        keepalive_timer = millis();
+    }
+}
 
 void loop(void) {
     int8_t ret;
@@ -699,10 +722,18 @@ void loop(void) {
     webServer.handleClient();
     if (wifi_ap_mode) {
         dnsServer.processNextRequest();
+        if (millis() - wifi_connect_timer > 90 * 1000 ) {
+            ESP.restart();
+            while (1) {
+                delay(1);
+            }
+        }
         return;
     } else {
         ArduinoOTA.handle();
     }
+
+    keepalive(60);
 
     if (pBLEScan->isScanning() == false) {
         pBLEScan->start(0, nullptr, false);
@@ -768,7 +799,7 @@ void loop(void) {
         }
 
         if (memcmp(idm, _prevIDm, 8) == 0) {
-            if ((millis() - _prevTime) < 10000) {
+            if ((millis() - nfcscan_timer) < 10000) {
                 Serial.println("Same card");
                 delay(1);
                 nfc.felica_WaitingCard(systemCode, requestCode, idm, pmm, &systemCodeResponse);
@@ -777,7 +808,7 @@ void loop(void) {
             }
         }
 
-        _prevTime = millis();
+        nfcscan_timer = millis();
 
         Serial.println("Found a card!");
         Serial.print("  IDm: ");
@@ -833,16 +864,17 @@ void loop(void) {
             }
             Serial.println();
 
+            /* student_id が valid かどうかを labapi に問い合わせ */
+            /* use_beaconinfo = true の場合は，ibeacon情報も含めて問い合わせ */
             int res = check_room(student_id, use_beaconinfo);
             if (res == 0) {
                 messageBox(0, 0, str_student_id + ": " + (lock_state == 0 ? "Unlock" : "Lock"));
-                /* student_id が valid かどうかを labapi に問い合わせ */
-                /* もし idm が返ってきたら idm も比較して不一致なら NG */
-                /* idmが返ってこない場合にはidmを登録 */
-                /* student id が validでで，room_name に許可があれば switchbot apiに解錠を送る．*/
+                /* student id が validでで，room_name に許可があれば あくあたんに解錠の動作をさせる．
+                   動作キューをクリアし，解錠動作を入れる． */
                 aquatan.clearActionQueue();
                 aquatan.queueMoveTo(128, 96, 2, 4);
                 aquatan.queueAction(STATUS_TOUCH, 0, 0);
+
             } else if (res == 1) {
                 messageBox(0, 0, "No Aquatan beacon.", TFT_WHITE, TFT_RED);
                 playSound(SE_WARN);
@@ -858,14 +890,14 @@ void loop(void) {
             }
         }
 
-        // Wait 1 second before continuing
+        // waiting next card scan
         Serial.println("Card access completed!\n");
         nfc.felica_WaitingCard(systemCode, requestCode, idm, pmm, &systemCodeResponse);
         irq = false;
     }
 
-    if (millis() > move_prev_millis + 2500) {
-        move_prev_millis = millis();
+    if (millis() - move_timer > 2500) {
+        move_timer = millis();
         // ランダムに移動 未解錠時 0, 96, (240-64),(240-64) の範囲内
         if (aquatan.isEmptyQueue()) {
             if (random(100) > 50) {
@@ -885,7 +917,7 @@ void loop(void) {
                     target_y = aquatan.current_y();
                 }
                 aquatan.queueMoveTo(constrain(target_x, 0, 240 - 64),
-                                    constrain(target_y, 96, 240 - 64));
+                                    constrain(target_y, 96 + 32, 240 - 64));
             }
         }
     }
@@ -893,6 +925,7 @@ void loop(void) {
         aquatan.sleep();
         int retval = aquatan.dequeueAction();
         if (retval == STATUS_TOUCH) {
+            /* 実際の解錠はあくあたんが動き終わった後に行われる． */
             // use switchbot lock api here
             String deviceid = mac2deviceid(lock_mac);
             if (deviceid != "") {
@@ -916,11 +949,13 @@ void loop(void) {
         if (lock_state == 0) {  // locked
             bgmap[2][4] = bgmap[2][5] = 1;
             bgmap[3][4] = bgmap[3][5] = 0;
+            bgmap[4][4] = bgmap[4][5] = 0;
             post_note("door_" + room_name + "_" + "lock", str_student_id);
             str_student_id = "0";
         } else if (lock_state == 1) {  // unlocked
             bgmap[2][4] = bgmap[2][5] = 2;
             bgmap[3][4] = bgmap[3][5] = 2;
+            bgmap[4][4] = bgmap[4][5] = 2;
             post_note("door_" + room_name + "_" + "unlock", str_student_id);
             str_student_id = "0";
         } else if (lock_state == 2 || lock_state == 3) {  // locking or unlocking
@@ -928,12 +963,14 @@ void loop(void) {
             bgmap[2][5] = 20;
             bgmap[3][4] = 17;
             bgmap[3][5] = 18;
+            bgmap[4][4] = 17;
+            bgmap[4][5] = 18;
         } else if (lock_state < 0) {
             messageBox(0, 0, "Cannot find lock.", TFT_WHITE, TFT_MAGENTA);
             prev_lock_state = lock_state;
         }
         prev_lock_state = lock_state;
-        bg.drawMap(4, 2, 2, 2);
+        bg.drawMap(4, 2, 2, 3);
     }
 
     // delay(10);
