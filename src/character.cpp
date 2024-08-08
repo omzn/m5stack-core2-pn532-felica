@@ -54,8 +54,8 @@ void Character::setMap(Map *m) {
 int16_t Character::current_x() { return pos_x; }
 int16_t Character::current_y() { return pos_y; }
 
-int Character::current_width() { return width; }
-int Character::current_height() { return height; }
+int Character::current_width() { return width * (size + 1); }
+int Character::current_height() { return height * (size + 1); }
 
 void Character::setSpeed(uint8_t s) {
   if (s > 0) {

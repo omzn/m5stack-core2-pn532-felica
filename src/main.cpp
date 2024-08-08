@@ -135,6 +135,10 @@ String ssid = "hogehoge";
 String wifipass = "foobar";
 String room_name = "8-302";
 String url_apiserver = "http://192.168.3.192:3001";
+String on_unlock_devs = "";
+String off_unlock_devs = "";
+String on_lock_devs = "";
+String off_lock_devs = "";
 boolean use_beaconinfo = false;
 int use_postdb = 1;
 
@@ -144,7 +148,7 @@ String str_student_id = "0";
 
 NimBLEScan *pBLEScan;
 
-int lock_state = -1;
+int lock_state = -1; // 000 Locked, 001 Unlocked
 int prev_lock_state = 0;
 String strLockState[8] = {"Locked", "Unlocked", "Locking", "Unlocking", "LockingStop", "UnlockingStop", "NotFullyLocked"};
 
@@ -224,6 +228,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
             if (strManufacturerData[0] == 0x69 && strManufacturerData[1] == 0x09) {
                 //                Serial.printf("strManufacturerData: %d ", strManufacturerData.length());
                 lock_state = strManufacturerData[9] >> 4 & 0x07;
+                // 000 : Locked   001: unlocked
                 //                Serial.printf("lock_state = %s\n", strLockState[lock_state]);
             }
         }
@@ -313,7 +318,19 @@ void handleConfig() {
         } else if (argname == "url_apiserver") {
             url_apiserver = argv;
             prefs.putString("url_apiserver", url_apiserver);
-        } else if (argname == "use_beaconinfo") {
+        } else if (argname == "on_unlock") {
+            on_unlock_devs = argv;
+            prefs.putString("on_unlock", on_unlock_devs);
+        } else if (argname == "on_lock") {
+            on_lock_devs = argv;
+            prefs.putString("on_lock", on_lock_devs);
+        } else if (argname == "off_unlock") {
+            off_unlock_devs = argv;
+            prefs.putString("off_unlock", off_unlock_devs);
+       } else if (argname == "off_lock") {
+            off_lock_devs = argv;
+            prefs.putString("off_lock", off_lock_devs);
+         } else if (argname == "use_beaconinfo") {
             use_beaconinfo = (argv == "true");
             prefs.putBool("use_beaconinfo", use_beaconinfo);
         }
@@ -542,7 +559,9 @@ int check_room(uint32_t student_id, boolean use_beacon = false) {
     return is_authorized;
 }
 
-void post_lock(int command, String device) {  // 0 : unlock,   1 : lock
+void post_lock(int command, String device) {  
+    // command: 0 : currently locked, then unlock,   
+    //          1 : currently unlocked, then lock
     char params[128];
 
     String apiurl = url_apiserver + "/lock/" + (command == 0 ? "unlock" : "lock");
@@ -550,15 +569,53 @@ void post_lock(int command, String device) {  // 0 : unlock,   1 : lock
     http.begin(client, apiurl.c_str());
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
     sprintf(params, "id=%s", device.c_str());
-    int httpCode = http.POST(params);
-    if (httpCode > 0) {
-        Serial.printf("[HTTP] POST lock ... code: %d\n", httpCode);
-        Serial.printf("[HTTP] url: %s params: %s\n", apiurl.c_str(), params);
-    } else {
-        Serial.printf(
-            "[ERROR] POST lock... no connection or no HTTP server: %s\n",
-            http.errorToString(httpCode).c_str());
-        Serial.printf("[ERROR] url: %s params: %s\n", apiurl.c_str(), params);
+    for (int i = 0; i < 3; i++) {
+        int httpCode = http.POST(params);
+        if (httpCode > 0) {
+            Serial.printf("[HTTP] POST lock ... code: %d\n", httpCode);
+            Serial.printf("[HTTP] url: %s params: %s\n", apiurl.c_str(), params);
+            break;
+        } else {
+            Serial.printf(
+                "[ERROR] POST lock... no connection or no HTTP server: %s\n",
+                http.errorToString(httpCode).c_str());
+            Serial.printf("[ERROR] url: %s params: %s\n", apiurl.c_str(), params);
+            if (i < 2) {
+                delay(500);
+            } else {
+                messageBox(0, 0, "Failed to POST", TFT_WHITE, TFT_MAGENTA);
+            }
+        }
+    }
+    http.end();
+}
+
+void post_relay(int command, String api) {  
+    // command: 0 : off  api /relay/:id
+    //          1 : on
+    char params[128];
+    String apiurl = url_apiserver + api ;
+    Serial.println(apiurl);
+    http.begin(client, apiurl.c_str());
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    sprintf(params, "opr=%s", command ? "on" : "off");
+    for (int i = 0; i < 3; i++) {
+        int httpCode = http.POST(params);
+        if (httpCode > 0) {
+            Serial.printf("[HTTP] POST relay ... code: %d\n", httpCode);
+            Serial.printf("[HTTP] url: %s params: %s\n", apiurl.c_str(), params);
+            break;
+        } else {
+            Serial.printf(
+                "[ERROR] POST relay... no connection or no HTTP server: %s\n",
+                http.errorToString(httpCode).c_str());
+            Serial.printf("[ERROR] url: %s params: %s\n", apiurl.c_str(), params);
+            if (i < 2) {
+                delay(500);
+            } else {
+                messageBox(0, 0, "Failed to POST", TFT_WHITE, TFT_MAGENTA);
+            }
+        }
     }
     http.end();
 }
@@ -599,6 +656,10 @@ void setup(void) {
     wifipass = prefs.getString("wifipass", wifipass);
     room_name = prefs.getString("room_name", room_name);
     use_beaconinfo = prefs.getBool("use_beaconinfo", use_beaconinfo);
+    on_lock_devs = prefs.getString("on_lock", on_lock_devs);
+    on_unlock_devs = prefs.getString("on_unlock", on_unlock_devs);
+    off_lock_devs = prefs.getString("off_lock", off_lock_devs);
+    off_unlock_devs = prefs.getString("off_unlock", off_unlock_devs);
 
     lcd->init();
     lcd->setFont(&fonts::Font2);
@@ -716,6 +777,24 @@ void keepalive(int seconds) {
     }
 }
 
+void relaydevices(String devs, int state) {
+    int idx;
+    int prev_idx = 0;
+    if (devs != "") {
+        do {
+            idx = devs.indexOf(",", prev_idx);
+            if (idx < 0) {
+                idx = devs.length();
+            }
+            String dev = devs.substring(prev_idx, idx);
+            if (dev != "") {
+                post_relay(state,dev);
+            }
+            prev_idx = idx + 1;
+      } while (idx < devs.length());
+    }
+}
+
 void loop(void) {
     int8_t ret;
 
@@ -759,9 +838,20 @@ void loop(void) {
                 }
             }
             if (pos.x >= 0 && pos.x < 320 && pos.y < 240 && pos.y > 96) {
-                int to_x = pos.x - pos.x % 32;
-                int to_y = pos.y - pos.y % 32;
-                aquatan.queueMoveTo(to_x, to_y, 4, 4);
+                if (pos.x >= aquatan.current_x() && pos.x <= aquatan.current_x() + aquatan.current_width() 
+                    && pos.y >= aquatan.current_y() && pos.y <= aquatan.current_y() + aquatan.current_height()) {
+                    if (lock_state == 1) {
+                        messageBox(0, 0, "Lock");
+                        /* 施錠のみ */
+                        aquatan.clearActionQueue();
+                        aquatan.queueMoveTo(128, 96, 2, 4);
+                        aquatan.queueAction(STATUS_TOUCH, 0, 0);
+                    }
+                } else {
+                    int to_x = pos.x - pos.x % 32;
+                    int to_y = pos.y - pos.y % 32;
+                    aquatan.queueMoveTo(to_x, to_y, 4, 4);
+                }
                 playSound(SE_PI);
             }
         }
@@ -777,6 +867,17 @@ void loop(void) {
         messageBox(0, 0, "IP: " + WiFi.localIP().toString());
         message_timer = millis();
     }
+
+    if (BtnB) {
+        BtnB = false;
+        if (lock_state == 1) {
+            messageBox(0, 0, "Lock");
+            /* 施錠のみ */
+            aquatan.clearActionQueue();
+            aquatan.queueMoveTo(128, 96, 2, 4);
+            aquatan.queueAction(STATUS_TOUCH, 0, 0);
+        }
+    }
     if (BtnC) {
         BtnC = false;
         Serial.println("Button C");
@@ -785,9 +886,9 @@ void loop(void) {
     }
 
     if (irq) {
-        // Wait for an FeliCa type cards.
+        // Wait for a FeliCa type cards.
         // When one is found, some basic information such as IDm, PMm, and System Code are retrieved.
-        Serial.print("Waiting for an FeliCa card...  ");
+        Serial.print("Waiting for a FeliCa card...  ");
         ret = nfc.felica_ReadingCard(systemCode, requestCode, idm, pmm, &systemCodeResponse);
 
         if (ret != 1) {
@@ -833,6 +934,7 @@ void loop(void) {
         blockList[1] = 0x8001;
         blockList[2] = 0x8002;
         blockList[3] = 0x8003;
+        delay(1);
         ret = nfc.felica_ReadWithoutEncryption(1, serviceCodeList, 4, blockList, blockData);
         if (ret != 1) {
             Serial.println("error");
@@ -871,6 +973,13 @@ void loop(void) {
                 messageBox(0, 0, str_student_id + ": " + (lock_state == 0 ? "Unlock" : "Lock"));
                 /* student id が validでで，room_name に許可があれば あくあたんに解錠の動作をさせる．
                    動作キューをクリアし，解錠動作を入れる． */
+                /* 解錠動作を先に行う． */
+                String deviceid = mac2deviceid(lock_mac);
+                if (deviceid != "") {
+                    post_lock(lock_state, deviceid);
+                    //playSound(SE_MAC);
+                }
+                //
                 aquatan.clearActionQueue();
                 aquatan.queueMoveTo(128, 96, 2, 4);
                 aquatan.queueAction(STATUS_TOUCH, 0, 0);
@@ -927,11 +1036,12 @@ void loop(void) {
         if (retval == STATUS_TOUCH) {
             /* 実際の解錠はあくあたんが動き終わった後に行われる． */
             // use switchbot lock api here
+            /* 解錠動作は時間がかかるので，先に実行することにした．
             String deviceid = mac2deviceid(lock_mac);
             if (deviceid != "") {
                 post_lock(lock_state, deviceid);
-                playSound(SE_MAC);
-            }
+            }*/
+            playSound(SE_MAC);
             message_timer = millis();
         }
     }
@@ -951,12 +1061,22 @@ void loop(void) {
             bgmap[3][4] = bgmap[3][5] = 0;
             bgmap[4][4] = bgmap[4][5] = 0;
             post_note("door_" + room_name + "_" + "lock", str_student_id);
+//            post_relay(0,"/relay/2");
+//            post_relay(0,"/relay/3");
+//            post_relay(0,"/plug/1");
+            relaydevices(off_lock_devs,0);
+            relaydevices(on_lock_devs,1);
             str_student_id = "0";
         } else if (lock_state == 1) {  // unlocked
             bgmap[2][4] = bgmap[2][5] = 2;
             bgmap[3][4] = bgmap[3][5] = 2;
             bgmap[4][4] = bgmap[4][5] = 2;
             post_note("door_" + room_name + "_" + "unlock", str_student_id);
+//            post_relay(1,"/relay/2");
+//            post_relay(1,"/relay/3");
+//            post_relay(1,"/plug/1");
+            relaydevices(off_unlock_devs,0);
+            relaydevices(on_unlock_devs,1);
             str_student_id = "0";
         } else if (lock_state == 2 || lock_state == 3) {  // locking or unlocking
             bgmap[2][4] = 19;
