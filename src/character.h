@@ -46,8 +46,8 @@ enum {
   ORIENT_LEFT,
   ORIENT_RIGHT,
   ORIENT_BACK,
-  ORIENT_JUMP,
-  ORIENT_SLEEP
+  ORIENT_SLEEP,
+  ORIENT_JUMP
 };
 enum { STATUS_WAIT = 0, STATUS_STOP, STATUS_MOVE, STATUS_TOUCH };
 enum {
@@ -58,6 +58,7 @@ enum {
   MOVE_LEFTBACK,
   MOVE_RIGHTBACK
 };
+
 
 class Character {
 public:
@@ -113,6 +114,7 @@ protected:
   uint16_t wait_timer;
   uint32_t drawBmpOnSprite(LGFX_Sprite *sp,unsigned char *data, int16_t, int16_t, int16_t, int16_t);
   uint32_t drawSprite(unsigned char *data, uint8_t size = 1);
+
 };
 
 #endif

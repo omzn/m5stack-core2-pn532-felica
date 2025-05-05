@@ -1,3 +1,4 @@
+#include <map>
 #include <M5Core2.h>
 
 #define LGFX_M5STACK_CORE2
@@ -47,6 +48,7 @@
 */
 #include "Character.h"
 #include "Map.h"
+#include "15159.h"
 #include "bitmaps.h"
 #include "sound.h"
 
@@ -82,6 +84,7 @@ volatile boolean irq = false;
 
 int message_timer = 0;
 uint32_t wifi_connect_timer = 0;
+std::map<int, int> colorTable[10];
 
 /* LCD variables */
 
@@ -341,6 +344,10 @@ void handleConfig() {
     json["use_beaconinfo"] = use_beaconinfo ? "true" : "false";
     json["lock_mac"] = lock_mac;
     json["room_name"] = room_name;
+    json["on_lock"] = on_lock_devs;
+    json["off_lock"] = off_lock_devs;
+    json["on_unlock"] = on_unlock_devs;
+    json["off_unlock"] = off_unlock_devs;
     json["ssid"] = ssid;
     json["wifipass"] = "******";
     json.printTo(message);
@@ -846,6 +853,11 @@ void loop(void) {
                         aquatan.clearActionQueue();
                         aquatan.queueMoveTo(128, 96, 2, 4);
                         aquatan.queueAction(STATUS_TOUCH, 0, 0);
+                        String deviceid = mac2deviceid(lock_mac);
+                        if (deviceid != "") {
+                            post_lock(lock_state, deviceid);
+                            //playSound(SE_MAC);
+                        }
                     }
                 } else {
                     int to_x = pos.x - pos.x % 32;
@@ -876,6 +888,11 @@ void loop(void) {
             aquatan.clearActionQueue();
             aquatan.queueMoveTo(128, 96, 2, 4);
             aquatan.queueAction(STATUS_TOUCH, 0, 0);
+            String deviceid = mac2deviceid(lock_mac);
+            if (deviceid != "") {
+                post_lock(lock_state, deviceid);
+                //playSound(SE_MAC);
+            }
         }
     }
     if (BtnC) {
