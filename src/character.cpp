@@ -1,11 +1,11 @@
-#include "Character.h"
+#include "character.h"
 //#include "util.h"
 
-uint16_t colorTable[][22] = {
-  {48530,8517,580,12743,16969,21195,5517,1000,23308,2016,31,25421,4774,6919,35689,7294,24190,27237,64553,63488,57889,62115},
-  {48530,22592,19104,45248,57632,57632,65230,65095,64002,65535,61277,64266,35872,54496,35689,30152,53078,27237,38034,31695,16936,25356}
-};
-uint16_t colorIndex[] = {15070,15153};
+//uint16_t colorTable[][22] = {
+//  {48530,8517,580,12743,16969,21195,5517,1000,23308,2016,31,25421,4774,6919,35689,7294,24190,27237,64553,63488,57889,62115},
+//  {48530,22592,19104,45248,57632,57632,65230,65095,64002,65535,61277,64266,35872,54496,35689,30152,53078,27237,38034,31695,16936,25356}
+//};
+//uint16_t colorIndex[] = {15070,15153};
 
 Character::Character(LGFX *display, unsigned char (*bmp)[4][2048]) {
   tft = display;
@@ -409,7 +409,7 @@ uint32_t Character::drawSprite(unsigned char *data, uint8_t s) {
   return etime;
 }
 
-uint16_t convcolor(uint16_t orig, uint16_t change_index) {
+/*uint16_t convcolor(uint16_t orig, uint16_t change_index) {
   int i,j;
   for (i = 0; i < 22; i++) {
     if (orig == colorTable[0][i]) {
@@ -422,4 +422,4 @@ uint16_t convcolor(uint16_t orig, uint16_t change_index) {
     }
   }
   return colorTable[j][i];
-} 
+} */

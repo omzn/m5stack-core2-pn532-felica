@@ -12,6 +12,8 @@
 // #include <PN532/PN532_SPI/PN532_SPI.h>
 #include <PN532/PN532_I2C/PN532_I2C.h>
 
+#include <TPLinkSmartPlug.h>
+
 /* 配線図
   PN532      M5Stack Core2
 
@@ -46,7 +48,7 @@
 /*
 #include "Map.h"
 */
-#include "Character.h"
+#include "character.h"
 #include "Map.h"
 #include "15159.h"
 #include "bitmaps.h"
@@ -123,6 +125,7 @@ boolean BtnA, BtnB, BtnC;
 
 HTTPClient http;
 WiFiClient client;
+WiFiUDP udp;
 WebServer webServer(80);
 DNSServer dnsServer;
 const IPAddress apIP(192, 168, 1, 1);
@@ -787,6 +790,7 @@ void keepalive(int seconds) {
 void relaydevices(String devs, int state) {
     int idx;
     int prev_idx = 0;
+    TPLinkSmartPlug *tplug = NULL;
     if (devs != "") {
         do {
             idx = devs.indexOf(",", prev_idx);
@@ -795,7 +799,18 @@ void relaydevices(String devs, int state) {
             }
             String dev = devs.substring(prev_idx, idx);
             if (dev != "") {
-                post_relay(state,dev);
+                if (dev.startsWith("/plug/")) {
+                    String plugip = dev.substring(6);
+                    if (plugip != "") {
+                        tplug = new TPLinkSmartPlug();
+                        tplug->begin(client,udp);
+                        tplug->setTarget(plugip);                    
+                        tplug->setRelayState(state);
+                        delete tplug;
+                    }
+                } else {
+                    post_relay(state,dev);
+                }
             }
             prev_idx = idx + 1;
       } while (idx < devs.length());
